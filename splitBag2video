@@ -1,0 +1,25 @@
+import easygui
+import arrow
+import bokehPlot
+import numpy as np
+import subprocess
+bagPath=easygui.fileopenbox(filetypes=['*.bag'])
+runNumStart=easygui.integerbox(msg='wnter the start runNum')
+caseStart=easygui.integerbox(msg='enter the start case')
+outBag='out.bag'
+# runNumStop=easygui.integerbox(msg='wnter the stop runNum')
+# caseStop=easygui.integerbox(msg='enter the start case')
+
+
+df,parameters,path=bokehPlot.bag2pickle([bagPath])
+startI=np.where((df["trajectory__runNum"]==runNumStart)&(df["trajectory__case"]==caseStart))[0][0]
+print 'start index is',startI
+dt=df.index[startI]
+a=arrow.get(dt)
+ts=a.timestamp
+ts=ts+(a.microsecond*0.000001)
+
+print 'unix time start is',ts
+
+filt = subprocess.Popen(['rosbag','filter',bagPath,outBag,'"t.to_sec()>='+str(ts)+'"'], stdout=subprocess.PIPE)
+print filt.communicate()[0]
