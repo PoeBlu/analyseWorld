@@ -23,7 +23,7 @@ from datetime import datetime
 from opterator import opterate
 
 import os
-
+from easygui import multenterbox
 
 def TicTocGenerator():
     # Generator that returns time differences
@@ -128,6 +128,181 @@ def get_filepaths(directory):
 
 
 
+
+class PlotData():
+    def __init__(self,df, case, parameters, fig=None,
+              x_range=None, y_range=None,
+              plot_width=1000, plot_height=1000,
+              s=4, xc=513, yc=505, xw=20, yw=20,
+              showPlot=True, title=None, addOdour=True,
+              addStart=True, addArrow=True,reallign=False,xir=513,yir=513,
+                 plotFrom=None,plotTo=None,
+                 runNumFrom=None,runNumTo=None,
+                 caseFrom=None,caseTo=None,filterGui=False
+
+                 ):
+
+        self.df=df
+        # self.case=case
+        self.parameters=parameters
+        self.fig=fig
+        self.plot_width=plot_width
+        self.plot_height=plot_height
+        self.x_range=self.getRange(x_range, xc, xw)
+        self.y_range=self.getRange(y_range, yc, yw)
+
+        self.showPlot=showPlot
+        self.title=title
+
+        self.df2,self.plotFrom,self.plotTo=self.filterData(self.df,
+                                                           runNumFrom,runNumTo,caseFrom,caseTo,
+                                                           plotFrom,plotTo,reallign,xir,yir,filterGui)
+
+
+    def filterData(self,df, runNumFrom,runNumTo,
+                    caseFrom,caseTo,plotFrom,plotTo,
+                    reallign,xir,yir,
+                   filterGui=True):
+
+        if filterGui:
+            msg = "Enter the start stop of your data"
+            title = "Choose runNum/case or explicit index"
+            fieldNames = ["runNumFrom", "runNumTo", "caseFrom", "caseTo", "IndexFrom", "IndexTo"]
+            fieldValues = multenterbox(msg, title, fieldNames)
+
+            runNumFrom=fieldValues[0]
+            runNumTo=fieldValues[1]
+            caseFrom=fieldValues[2]
+            caseTo=fieldValues[3]
+            plotFrom=fieldValues[4]
+            plotTo=fieldValues[5]
+
+
+        if (filterGui and plotFrom=='') or (not filterGui and plotFrom is None):
+            plotFrom = np.where((df["trajectory__runNum"] == runNumFrom) &
+                              (df["trajectory__case"] == caseFrom))[0][0]
+
+        if (filterGui and plotTo=='') or (not filterGui and plotTo is None):
+            plotTo = np.where((df["trajectory__runNum"] == runNumTo) &
+                              (df["trajectory__case"] == caseTo))[0][0]
+
+
+        if reallign:
+            xs = self.parameters['playerInitPos'][0]
+            ys = self.parameters['playerInitPos'][1]
+
+            xoffs = xs - xir
+            yoffs = ys - yir
+
+            df.trajectory__pPos_x-=xoffs
+            df.trajectory__pPos_y-=yoffs
+
+        return df.ix[plotFrom:plotTo,:],plotFrom,plotTo
+
+    def getRange(self, range, c, w):
+        '''
+        give the range if range is none as center +- width
+        :param range: a tuple containing range, None if need to defined by center and width
+        :param c: Center of the range
+        :param w: Total width of the range 
+        :return: range tuple centered around c, with width w
+        '''
+        if range is None:
+            range=(c-w/2.,c+w/2.)
+
+        return range
+
+
+
+class bokehPlotData(PlotData):
+    def __init__(self,TOOLS="pan,crosshair,wheel_zoom\
+              ,box_zoom,reset,box_select,lasso_select,undo,redo,save",
+              output_backend="webgl",addSmallTit=True):
+
+        super(PlotData, self).__init__()
+        dfc = df[df.trajectory__case == case]
+        x = dfc.trajectory__pPos_x
+        y = dfc.trajectory__pPos_y
+        h = np.deg2rad(dfc.trajectory__pOri_x)
+
+        if 'haw' in parameters['fly']:
+            dfcv = dfc.trajectory__valve2
+
+        elif 'apple' in parameters['fly']:
+            dfcv = dfc.trajectory__valve1
+
+        ox = dfc[dfcv == True].trajectory__pPos_x
+        oy = dfc[dfcv == True].trajectory__pPos_y
+
+        #     opf=dfc[dfc.trajectory__valve1==True].trajectory__pOri_x
+
+        #     import matplotlib as mpl
+        #     colors = [
+        #         "#%02x%02x%02x" % (int(r), int(g), int(b)) for r, g, b, _ in 255*mpl.cm.viridis(mpl.colors.Normalize()(opf))
+        #     ]
+
+
+        try:
+            cm = bp.viridis(max(parameters['odourQuad']) + 1)
+            fc = cm[parameters["odourQuad"][case]]
+        except TypeError:
+            fc = bp.viridis(10)[5]
+
+        if not addSmallTit:
+            title = ''
+
+        if fig is None:
+            fig = figure(tools=TOOLS, x_range=x_range, y_range=y_range, output_backend=output_backend,
+                         plot_width=plot_width, plot_height=plot_height,
+                         active_scroll='wheel_zoom', title=title)
+
+        fig.title.align = 'center'
+        fig.title.text_font_size = '14pt'
+
+        r = 2
+        xs = parameters['playerInitPos'][0]
+        ys = parameters['playerInitPos'][1] + 8
+        theta = parameters['windQuadOpen'][case] + 180
+        if reallign:
+            xoffs = xs - 513
+            yoffs = ys - 513
+        else:
+            xoffs = 0
+            yoffs = 0
+        # Pos and heading of fly
+        fig.triangle(x - xoffs, y - yoffs, size=s, angle=h, fill_alpha=0.5, line_color=None)
+
+        if addOdour:
+            # circle at odour pos, with pf encoded in color
+            fig.circle(ox, oy, size=2 * s, fill_alpha=0.8, line_color=None, fill_color=fc)
+
+        if addStart:
+            # triangle at init pos
+            fig.triangle(parameters['playerInitPos'][0], parameters['playerInitPos'][1],
+                         size=3 * s, angle=0, fill_alpha=0.9, line_color=None, color='firebrick')
+
+        # arrow
+
+        if parameters["windQuad"][case] == -3:
+            lw = 0
+            la = 0.1
+        elif parameters["windQuad"][case] == -2:
+            lw = 4
+            la = 1
+        else:
+            lw = 10
+            la = 1
+        # print 'le is',lw
+        if addArrow:
+            fig.add_layout(Arrow(end=VeeHead(size=20), line_color="red", line_alpha=la,
+
+                                 x_start=xs, y_start=ys, line_width=lw,
+                                 x_end=xs + r * np.cos(np.deg2rad(theta)), y_end=ys + r * np.sin(np.deg2rad(theta))))
+
+        return fig
+    def addOdour(self):
+        pass
+    def add
 
 def bokehPlot(df, case, parameters, fig=None,
               TOOLS="pan,crosshair,wheel_zoom\
@@ -287,19 +462,19 @@ def bokehQuadPlot(df, parameters, path, tr=None, tl=None, bl=None, br=None,
 
         return tit
 
-    bl = bokehPlot(df, 2, parameters, TOOLS=TOOLS, title=quadTitGen(2),
-                   fig=bl, addSmallTit=addSmallTit, addStart=addStart,
-                   addArrow=addArrow, addOdour=addOdour
-                   , x_range=x_range, y_range=y_range)
-    tr = bokehPlot(df, 0, parameters, x_range=bl.x_range, y_range=bl.y_range, TOOLS=TOOLS, title=quadTitGen(0),
-                   fig=tr, addSmallTit=addSmallTit, addStart=addStart,
-                   addArrow=addArrow, addOdour=addOdour)
-    tl = bokehPlot(df, 1, parameters, x_range=bl.x_range, y_range=bl.y_range, TOOLS=TOOLS, title=quadTitGen(1),
-                   fig=tl, addSmallTit=addSmallTit, addStart=addStart
-                   , addArrow=addArrow, addOdour=addOdour)
-    br = bokehPlot(df, 3, parameters, x_range=bl.x_range, y_range=bl.y_range, TOOLS=TOOLS, title=quadTitGen(3),
-                   fig=br, addSmallTit=addSmallTit, addStart=addStart,
-                   addArrow=addArrow, addOdour=addOdour)
+    bl = bokehPlotData(df, 2, parameters, TOOLS=TOOLS, title=quadTitGen(2),
+                       fig=bl, addSmallTit=addSmallTit, addStart=addStart,
+                       addArrow=addArrow, addOdour=addOdour
+                       , x_range=x_range, y_range=y_range)
+    tr = bokehPlotData(df, 0, parameters, x_range=bl.x_range, y_range=bl.y_range, TOOLS=TOOLS, title=quadTitGen(0),
+                       fig=tr, addSmallTit=addSmallTit, addStart=addStart,
+                       addArrow=addArrow, addOdour=addOdour)
+    tl = bokehPlotData(df, 1, parameters, x_range=bl.x_range, y_range=bl.y_range, TOOLS=TOOLS, title=quadTitGen(1),
+                       fig=tl, addSmallTit=addSmallTit, addStart=addStart
+                       , addArrow=addArrow, addOdour=addOdour)
+    br = bokehPlotData(df, 3, parameters, x_range=bl.x_range, y_range=bl.y_range, TOOLS=TOOLS, title=quadTitGen(3),
+                       fig=br, addSmallTit=addSmallTit, addStart=addStart,
+                       addArrow=addArrow, addOdour=addOdour)
 
     p = gridplot([[tl, tr], [bl, br]])
     #     export_png(p, filename=path+".png")
