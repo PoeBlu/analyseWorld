@@ -133,7 +133,7 @@ class PlotData():
     def __init__(self,df, case, parameters, fig=None,
               x_range=None, y_range=None,
               plot_width=1000, plot_height=1000,
-              s=4, xc=513, yc=505, xw=20, yw=20,
+              xc=513, yc=505, xw=20, yw=20,
               showPlot=True, title=None, addOdour=True,
               addStart=True, addArrow=True,reallign=False,xir=513,yir=513,
                  plotFrom=None,plotTo=None,
@@ -154,10 +154,14 @@ class PlotData():
         self.showPlot=showPlot
         self.title=title
 
-        self.df2,self.plotFrom,self.plotTo=self.filterData(self.df,
-                                                           runNumFrom,runNumTo,caseFrom,caseTo,
-                                                           plotFrom,plotTo,reallign,xir,yir,filterGui)
+        self.df2,self.plotFrom,self.plotTo=self.filterData(
+                                            self.df,runNumFrom,runNumTo,
+                                            caseFrom,caseTo,
+                                            plotFrom,plotTo,
+                                            reallign,xir,yir,
+                                            filterGui)
 
+        return self.df2
 
     def filterData(self,df, runNumFrom,runNumTo,
                     caseFrom,caseTo,plotFrom,plotTo,
@@ -178,13 +182,20 @@ class PlotData():
             plotTo=fieldValues[5]
 
 
-        if (filterGui and plotFrom=='') or (not filterGui and plotFrom is None):
+        if plotFrom is 'start':
+            plotFrom=0
+        elif (filterGui and plotFrom=='') or (not filterGui and plotFrom is None):
             plotFrom = np.where((df["trajectory__runNum"] == runNumFrom) &
                               (df["trajectory__case"] == caseFrom))[0][0]
 
-        if (filterGui and plotTo=='') or (not filterGui and plotTo is None):
+
+        if plotTo is 'end':
+            plotTo = df.shape[0]
+        elif (filterGui and plotTo=='') or (not filterGui and plotTo is None):
             plotTo = np.where((df["trajectory__runNum"] == runNumTo) &
                               (df["trajectory__case"] == caseTo))[0][0]
+
+
 
 
         if reallign:
@@ -193,6 +204,9 @@ class PlotData():
 
             xoffs = xs - xir
             yoffs = ys - yir
+            self.parameters['playerInitPos'][0]-=xoffs
+            self.parameters['playerInitPos'][1]-=yoffs
+
 
             df.trajectory__pPos_x-=xoffs
             df.trajectory__pPos_y-=yoffs
@@ -214,95 +228,99 @@ class PlotData():
 
 
 
-class bokehPlotData(PlotData):
-    def __init__(self,TOOLS="pan,crosshair,wheel_zoom\
-              ,box_zoom,reset,box_select,lasso_select,undo,redo,save",
-              output_backend="webgl",addSmallTit=True):
+class bokehPlot(PlotData):
+    def __init__(self,case,TOOLS="pan,crosshair,wheel_zoom\
+                ,box_zoom,reset,box_select,lasso_select,undo,redo,save",
+                output_backend="webgl",addSmallTit=True,titFontSize='14pt',
+                addTraj=True,addOdour=True,addStart=True,addArrow=True,
+                trajS=4,odourS=8,startS=10,arrowS=20,
+                trajAlpha=0.5,odourAlpha=0.8,startAlpha=0.9,arrowAlpha=0.8,
+                trajC='blue',odourC='green',startC='red',arrowC='black'):
 
-        super(PlotData, self).__init__()
-        dfc = df[df.trajectory__case == case]
+        self.df=super(PlotData, self).__init__()
+
+        dfc = self.df[self.df.trajectory__case == case]
         x = dfc.trajectory__pPos_x
         y = dfc.trajectory__pPos_y
         h = np.deg2rad(dfc.trajectory__pOri_x)
 
-        if 'haw' in parameters['fly']:
+        if 'haw' in self.parameters['fly']:
             dfcv = dfc.trajectory__valve2
-
-        elif 'apple' in parameters['fly']:
+        elif 'apple' in self.parameters['fly']:
             dfcv = dfc.trajectory__valve1
 
         ox = dfc[dfcv == True].trajectory__pPos_x
         oy = dfc[dfcv == True].trajectory__pPos_y
 
-        #     opf=dfc[dfc.trajectory__valve1==True].trajectory__pOri_x
-
-        #     import matplotlib as mpl
-        #     colors = [
-        #         "#%02x%02x%02x" % (int(r), int(g), int(b)) for r, g, b, _ in 255*mpl.cm.viridis(mpl.colors.Normalize()(opf))
-        #     ]
-
 
         try:
-            cm = bp.viridis(max(parameters['odourQuad']) + 1)
-            fc = cm[parameters["odourQuad"][case]]
+            cm = bp.viridis(max(self.parameters['odourQuad']) + 1)
+            fc = cm[self.parameters["odourQuad"][case]]
         except TypeError:
             fc = bp.viridis(10)[5]
 
         if not addSmallTit:
             title = ''
 
-        if fig is None:
-            fig = figure(tools=TOOLS, x_range=x_range, y_range=y_range, output_backend=output_backend,
-                         plot_width=plot_width, plot_height=plot_height,
-                         active_scroll='wheel_zoom', title=title)
+        if self.fig is None:
+            self.fig = figure(tools=TOOLS, x_range=self.x_range, y_range=self.y_range,
+                         plot_width=self.plot_width, plot_height=self.plot_height,
+                         active_scroll='wheel_zoom', title=title,
+                         output_backend=output_backend,)
 
-        fig.title.align = 'center'
-        fig.title.text_font_size = '14pt'
+        self.fig.title.align = 'center'
+        self.fig.title.text_font_size = titFontSize
 
         r = 2
-        xs = parameters['playerInitPos'][0]
-        ys = parameters['playerInitPos'][1] + 8
-        theta = parameters['windQuadOpen'][case] + 180
-        if reallign:
-            xoffs = xs - 513
-            yoffs = ys - 513
-        else:
-            xoffs = 0
-            yoffs = 0
+        xs = self.parameters['playerInitPos'][0]
+        ys = self.parameters['playerInitPos'][1]
+        # if reallign:
+        #     xoffs = xs - 513
+        #     yoffs = ys - 513
+        # else:
+        #     xoffs = 0
+        #     yoffs = 0
+
         # Pos and heading of fly
-        fig.triangle(x - xoffs, y - yoffs, size=s, angle=h, fill_alpha=0.5, line_color=None)
+        if addTraj:
+            self.fig.triangle(x, y, size=trajS, angle=h,
+                              fill_alpha=trajAlpha, line_color=None,fill_color=trajC)
 
         if addOdour:
             # circle at odour pos, with pf encoded in color
-            fig.circle(ox, oy, size=2 * s, fill_alpha=0.8, line_color=None, fill_color=fc)
+            self.fig.circle(ox, oy, size=odourS, fill_alpha=odourAlpha, line_color=None,
+                            fill_color=odourC)
 
         if addStart:
             # triangle at init pos
-            fig.triangle(parameters['playerInitPos'][0], parameters['playerInitPos'][1],
-                         size=3 * s, angle=0, fill_alpha=0.9, line_color=None, color='firebrick')
+            self.fig.triangle(xs,ys,
+                         size=startS, angle=self.parameters['playerInitH'],
+                              fill_alpha=startAlpha, line_color=None, color=startC)
 
         # arrow
 
-        if parameters["windQuad"][case] == -3:
+        if self.parameters["windQuad"][case] == -3:
             lw = 0
             la = 0.1
-        elif parameters["windQuad"][case] == -2:
+        elif self.parameters["windQuad"][case] == -2:
             lw = 4
             la = 1
         else:
             lw = 10
             la = 1
         # print 'le is',lw
+        theta = self.parameters['windQuadOpen'][case] + 180
+
         if addArrow:
-            fig.add_layout(Arrow(end=VeeHead(size=20), line_color="red", line_alpha=la,
+            self.fig.add_layout(Arrow(end=VeeHead(size=arrowS), line_color=arrowC,
+                                    line_alpha=la,line_width=lw,
+                                    x_start=xs, y_start=ys,
+                                    x_end=xs + r * np.cos(np.deg2rad(theta)),
+                                    y_end=ys + r * np.sin(np.deg2rad(theta))))
 
-                                 x_start=xs, y_start=ys, line_width=lw,
-                                 x_end=xs + r * np.cos(np.deg2rad(theta)), y_end=ys + r * np.sin(np.deg2rad(theta))))
+        return self.fig
 
-        return fig
-    def addOdour(self):
-        pass
-    def add
+
 
 def bokehPlot(df, case, parameters, fig=None,
               TOOLS="pan,crosshair,wheel_zoom\
